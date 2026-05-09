@@ -18,7 +18,8 @@ import {
 import { buildCrmDigest, parseSmartMovingOpportunity } from "./smartmoving";
 
 function printFindings(payload: FindingsPayload): void {
-  process.stdout.write(`${JSON.stringify(payload)}\n`);
+  const out = { findings: payload.findings };
+  process.stdout.write(`${JSON.stringify(out)}\n`);
 }
 
 function readJson(path: string): unknown {
@@ -56,7 +57,8 @@ function buildSystemPrompt(): string {
     "quote must be a verbatim substring copied from the transcript (one utterance or contiguous substring), used as evidence.",
     "summary must be a short factual description of the gap (one or two sentences max).",
     "",
-    `Call the tool ${SUBMIT_GAP_FINDINGS_TOOL_NAME} with your findings. If there are no gaps, use an empty findings array.`,
+    `Call ${SUBMIT_GAP_FINDINGS_TOOL_NAME} with: reasoning — short step-by-step comparison of transcript vs CRM digest (what you verified, what differs); findings — the gap list.`,
+    "If there are no gaps, use an empty findings array; reasoning should still briefly state what you compared and that nothing was missing or contradicted.",
   ].join("\n");
 }
 
@@ -114,7 +116,7 @@ async function callAnthropic(
       user,
       "",
       `Your previous response was not usable: missing or invalid ${SUBMIT_GAP_FINDINGS_TOOL_NAME} arguments.`,
-      `Call ${SUBMIT_GAP_FINDINGS_TOOL_NAME} again with arguments that match the tool schema (empty findings if none).`,
+      `Call ${SUBMIT_GAP_FINDINGS_TOOL_NAME} again with arguments that match the tool schema: non-empty reasoning string and findings array (empty array if none).`,
     ].join("\n");
     return await run(fixUser);
   }

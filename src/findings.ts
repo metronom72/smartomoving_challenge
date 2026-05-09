@@ -31,10 +31,15 @@ export const SUBMIT_GAP_FINDINGS_TOOL_NAME = "submit_gap_findings" as const;
 export const gapFindingsTool = {
   name: SUBMIT_GAP_FINDINGS_TOOL_NAME,
   description:
-    "Submit the final CRM-vs-transcript gap analysis. Call once with all gaps; use an empty findings array when there are none.",
+    "Submit the final CRM-vs-transcript gap analysis. Include brief reasoning (transcript vs digest), then findings; call once — use an empty findings array when there are none.",
   input_schema: {
     type: "object" as const,
     properties: {
+      reasoning: {
+        type: "string",
+        description:
+          "Step-by-step comparison of the transcript vs the CRM digest: what you checked and where they diverge, before listing gaps. Be concise; do not paste the full call.",
+      },
       findings: {
         type: "array",
         description: "Gaps only: transcript facts missing or contradicted in the CRM digest.",
@@ -64,7 +69,7 @@ export const gapFindingsTool = {
         },
       },
     },
-    required: ["findings"],
+    required: ["reasoning", "findings"],
   },
 };
 
@@ -85,6 +90,14 @@ export const FindingsPayloadSchema = z.object({
 
 export type FindingsPayload = z.infer<typeof FindingsPayloadSchema>;
 
+/** Raw tool_use input from the model (includes hidden chain-of-thought). */
+const GapFindingsToolInputSchema = z
+  .object({
+    reasoning: trimmedNonempty,
+    findings: z.array(GapFindingSchema),
+  })
+  .transform(({ findings }) => ({ findings }));
+
 export function normalizeFindingsPayload(raw: unknown): FindingsPayload {
-  return FindingsPayloadSchema.parse(raw);
+  return GapFindingsToolInputSchema.parse(raw);
 }
