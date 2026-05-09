@@ -207,7 +207,7 @@ Artifacts from a **real** verification pass are stored under:
 
 ### Unit tests
 
-`bun test` — results logged in `verification/runs/unit_tests.log` (3 passing tests in `src/aircall.test.ts` at time of run).
+`bun test` / `bun run test:coverage` — results logged in `verification/runs/unit_tests.log` (see that file for the latest counts and coverage table).
 
 ---
 

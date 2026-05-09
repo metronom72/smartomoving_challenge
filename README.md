@@ -302,6 +302,20 @@ Webhooks and queues typically provide **at-least-once** delivery. Handlers must 
 - **Optional first-stage filter** (rules, embeddings, or a smaller model) before Haiku at very high volume.
 - **SmartMoving write-back** with permissions and audit—still **out of scope** for this PoC codebase until explicitly built.
 
+## Tests
+
+```bash
+bun test
+```
+
+Coverage (line and function metrics for all `src/**/*.ts` except co-located `*.test.ts` files):
+
+```bash
+bun run test:coverage
+```
+
+The last full test run with coverage from this repo is captured in [`verification/runs/unit_tests.log`](verification/runs/unit_tests.log).
+
 ## Typecheck
 
 ```bash

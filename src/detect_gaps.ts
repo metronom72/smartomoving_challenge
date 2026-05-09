@@ -90,7 +90,6 @@ async function callAnthropic(
   maxTokens: number,
   system: string,
   user: string,
-  retryOnBadJson: boolean,
 ): Promise<FindingsPayload> {
   const run = async (userContent: string): Promise<FindingsPayload> => {
     const resp = await client.messages.create({
@@ -113,13 +112,12 @@ async function callAnthropic(
   try {
     return await run(user);
   } catch (e) {
-    if (!retryOnBadJson) throw e;
     const fixUser = appendInvalidGapFindingsToolRetryHint(user);
     return await run(fixUser);
   }
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   if (argv.length < 2) {
     logError("Usage: bun src/detect_gaps.ts <aircall.json> <smartmoving.json>");
@@ -230,14 +228,7 @@ async function main(): Promise<void> {
 
   let payload: FindingsPayload;
   try {
-    payload = await callAnthropic(
-      client,
-      cfg.anthropic.model,
-      maxTokensRequest,
-      system,
-      user,
-      true,
-    );
+    payload = await callAnthropic(client, cfg.anthropic.model, maxTokensRequest, system, user);
   } catch (e) {
     if (e instanceof ZodError) {
       logError("Model output failed schema validation:");
@@ -253,8 +244,13 @@ async function main(): Promise<void> {
   process.exit(0);
 }
 
-main().catch((e) => {
+/** Invoked from `main().catch` when the CLI entry runs; exported for tests. */
+export function handleMainRejection(e: unknown): void {
   const msg = e instanceof Error ? e.message : String(e);
   logError(`Unexpected error: ${msg}`);
   process.exit(1);
-});
+}
+
+if (import.meta.main) {
+  main().catch(handleMainRejection);
+}

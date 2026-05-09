@@ -6,6 +6,7 @@
   "scripts": {
     "detect": "bun src/detect_gaps.ts",
     "test": "bun test",
+    "test:coverage": "bun test --coverage",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

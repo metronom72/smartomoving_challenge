@@ -1,11 +1,140 @@
+$ bun test --coverage
 bun test v1.3.13 (bf2e2cec)
 
-src/aircall.test.ts:
-(pass) shouldSkipCall > returns true when outbound duration is strictly below threshold [2.00ms]
-(pass) shouldSkipCall > returns false when not a short outbound (inbound or duration at/above threshold)
-(pass) PayloadBuilder.formatUtterances > formats utterances as speaker-prefixed lines joined by newlines [1.00ms]
+src/detect_gaps.test.ts:
+(pass) handleMainRejection > logs unexpected error and exits 1 [9.00ms]
+[ERROR] Usage: bun src/detect_gaps.ts <aircall.json> <smartmoving.json>
+(pass) detect_gaps main > exits 2 when argv is too short
+[ERROR] Invalid configuration JSON shape:
+✖ Too small: expected string to have >=1 characters
+  → at anthropic.model
+(pass) detect_gaps main > exits 1 on invalid config shape [4.00ms]
+(pass) detect_gaps main > rejects when JSON file is missing
+[ERROR] Invalid Aircall JSON shape (/tmp/dgap-U42yuG/bad-aircall.json):
+✖ Invalid input: expected number, received string
+  → at duration
+(pass) detect_gaps main > exits 1 on invalid Aircall JSON [1.00ms]
+[ERROR] Invalid SmartMoving JSON shape (/tmp/dgap-zzwG2T/bad-sm.json):
+✖ Invalid input: expected number, received null
+  → at quoteNumber
+(pass) detect_gaps main > exits 1 on invalid SmartMoving JSON [2.00ms]
+[INFO] Skipping LLM: no usable transcript
+(pass) detect_gaps main > exits 0 with empty findings when no usable transcript [3.00ms]
+[INFO] Skipping LLM: outbound duration below threshold (duration_seconds=12, threshold_seconds=30)
+(pass) detect_gaps main > exits 0 with empty findings for short outbound [1.00ms]
+[ERROR] ANTHROPIC_API_KEY is required in the environment when the LLM path runs (transcript present and outbound duration guard passed).
+(pass) detect_gaps main > exits 1 when API key missing on LLM path [1.00ms]
+(pass) detect_gaps main > prints findings and exits 0 on successful tool response [4.00ms]
+(pass) detect_gaps main > logs when usage is missing on Anthropic response [1.00ms]
+[INFO] Calling Anthropic model: claude-haiku-4-5-20251001
+[INFO] Estimated API cost: $0.0001 (input_tokens=10, output_tokens=20)
+[INFO] Estimated API cost: $0.0001 (input_tokens=10, output_tokens=20)
+(pass) detect_gaps main > retries after invalid tool payload then succeeds [2.00ms]
+[INFO] Calling Anthropic model: claude-haiku-4-5-20251001
+[INFO] Anthropic response had no usage field; cost estimate unavailable.
+[INFO] Estimated API cost: $0.0001 (input_tokens=10, output_tokens=20)
+(pass) detect_gaps main > retries after missing tool block then succeeds [1.00ms]
+[INFO] Calling Anthropic model: claude-haiku-4-5-20251001
+[INFO] Estimated API cost: $0.0001 (input_tokens=10, output_tokens=20)
+[INFO] Estimated API cost: $0.0001 (input_tokens=10, output_tokens=20)
+[ERROR] Model output failed schema validation:
+✖ Too small: expected string to have >=1 characters
+  → at findings[0].summary
+(pass) detect_gaps main > exits 1 when model output stays invalid after retry [1.00ms]
+[INFO] Calling Anthropic model: claude-haiku-4-5-20251001
+[ERROR] Anthropic request or JSON validation failed: still down
+(pass) detect_gaps main > exits 1 when Anthropic keeps failing after retry [1.00ms]
+(pass) detect_gaps main > logs transcript cap lowered when max input tokens is tight [1.00ms]
+(pass) detect_gaps main > logs max_tokens clamp for Haiku when requested above cap [1.00ms]
+(pass) detect_gaps main > uses configured max tokens when model is not Haiku [1.00ms]
 
- 3 pass
+src/config.test.ts:
+(pass) loadConfig > merges default.json over Haiku baseline [1.00ms]
+(pass) loadConfig > merges local.json when no CONFIG_PATH override
+(pass) loadConfig > skips local.json when GAP_DETECTOR_CONFIG points at primary file
+(pass) loadConfig > CONFIG_PATH alias works like GAP_DETECTOR_CONFIG [1.00ms]
+(pass) loadConfig > environment variables override file values
+(pass) loadConfig > throws on invalid positive int env
+(pass) loadConfig > throws ZodError on invalid merged config [1.00ms]
+
+src/prompts.test.ts:
+(pass) buildSystemPrompt > includes taxonomy and tool name [1.00ms]
+(pass) buildUserPrompt > embeds meta, transcript, and digest sections
+(pass) appendInvalidGapFindingsToolRetryHint > appends corrective instruction
+
+src/simple_detect_gaps.test.ts:
+(pass) handleSimpleMainRejection > prints message and exits 1 [3.00ms]
+(pass) handleSimpleMainRejection > stringifies non-Error rejection values
+Usage: bun src/simple_detect_gaps.ts <aircall.json> <smartmoving.json>
+(pass) simple_detect_gaps main > exits 2 when argv is too short [1.00ms]
+ANTHROPIC_API_KEY is required.
+(pass) simple_detect_gaps main > exits 1 when API key missing
+(pass) simple_detect_gaps main > prints findings on success [2.00ms]
+(pass) simple_detect_gaps main > propagates Anthropic API errors [1.00ms]
+(pass) simple_detect_gaps main > shapeTranscriptLoose truncates when TRANSCRIPT_MAX_CHARS is small
+(pass) simple_detect_gaps main > buildCrmDigestLoose covers jobs stops notes inventory [1.00ms]
+(pass) simple_detect_gaps main > summarizeInventoryLoose lists item names quantities and weights [1.00ms]
+(pass) simple_detect_gaps main > rejects when response has no submit_gap_findings tool_use
+
+src/smartmoving.test.ts:
+(pass) parseSmartMovingOpportunity > accepts empty object
+(pass) parseSmartMovingOpportunity > throws on invalid finite constraints [1.00ms]
+(pass) buildCrmDigest > returns placeholder for empty opportunity [1.00ms]
+(pass) buildCrmDigest > includes header, jobs, stops, notes, inventory [1.00ms]
+(pass) buildCrmDigest > inventory defaults name and quantity
+(pass) buildCrmDigest > lists empty inventory when no items
+
+src/aircall.test.ts:
+(pass) shouldSkipCall > returns true when outbound duration is strictly below threshold
+(pass) shouldSkipCall > returns false when not a short outbound (inbound or duration at/above threshold)
+(pass) shouldSkipCall > treats non-outbound direction and non-finite duration as not skippable
+(pass) parseAircallCall > parses minimal valid call [1.00ms]
+(pass) parseAircallCall > normalizes nullish utterances to empty array
+(pass) parseAircallCall > throws on invalid shape
+(pass) hasUsableTranscript > false when no utterances or empty text only
+(pass) hasUsableTranscript > true when any utterance has non-empty trimmed text
+(pass) shouldSkipShortOutbound > delegates to shouldSkipCall with call fields
+(pass) PayloadBuilder.formatUtterances > formats utterances as speaker-prefixed lines joined by newlines
+(pass) PayloadBuilder.formatUtterances > uses unknown speaker and skips empty text
+(pass) PayloadBuilder.formatUtterances > truncates with documented suffix when over maxChars
+(pass) shapeTranscript > uses PayloadBuilder on call utterances
+(pass) shapeTranscript > empty when no transcription
+
+src/findings.test.ts:
+(pass) normalizeFindingsPayload > strips reasoning and returns findings
+(pass) normalizeFindingsPayload > accepts empty findings with non-empty reasoning
+(pass) normalizeFindingsPayload > rejects bad category
+(pass) normalizeFindingsPayload > rejects empty summary after trim [1.00ms]
+(pass) normalizeFindingsPayload > rejects missing reasoning
+(pass) tool contract > submit tool name is stable
+
+src/haiku_model_limits.test.ts:
+(pass) isHaikuModel > true when trimmed model id matches Haiku baseline
+(pass) effectiveHaikuMaxOutputTokens > clamps to Haiku max
+(pass) resolveHaikuTranscriptMaxChars > returns min of configured max and budget-derived chars
+(pass) resolveHaikuTranscriptMaxChars > returns 0 when token budget is exhausted
+
+src/schemas/gap-config.test.ts:
+(pass) GapDetectorConfigSchema > accepts full valid object
+(pass) GapDetectorConfigSchema > rejects non-positive maxTokens
+----------------------------|---------|---------|-------------------
+File                        | % Funcs | % Lines | Uncovered Line #s
+----------------------------|---------|---------|-------------------
+All files                   |   98.70 |   99.91 |
+ src/aircall.ts             |   85.71 |  100.00 | 
+ src/config.ts              |  100.00 |  100.00 | 
+ src/detect_gaps.ts         |  100.00 |   99.45 | 
+ src/findings.ts            |  100.00 |  100.00 | 
+ src/haiku_model_limits.ts  |  100.00 |  100.00 | 
+ src/prompts.ts             |  100.00 |  100.00 | 
+ src/schemas/aircall.ts     |  100.00 |  100.00 | 
+ src/schemas/gap-config.ts  |  100.00 |  100.00 | 
+ src/schemas/smartmoving.ts |  100.00 |  100.00 | 
+ src/simple_detect_gaps.ts  |  100.00 |   99.61 | 
+ src/smartmoving.ts         |  100.00 |  100.00 | 
+----------------------------|---------|---------|-------------------
+
+ 70 pass
  0 fail
- 5 expect() calls
-Ran 3 tests across 1 file. [51.00ms]
+ 120 expect() calls
+Ran 70 tests across 9 files. [122.00ms]
