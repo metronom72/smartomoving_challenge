@@ -11,7 +11,7 @@
     "isolatedModules": true,
     "noUncheckedIndexedAccess": true,
     "rootDir": ".",
-    "types": ["node"]
+    "types": ["bun", "node"]
   },
   "include": ["src/**/*.ts"]
 }

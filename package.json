@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "detect": "bun src/detect_gaps.ts",
+    "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -12,6 +13,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/bun": "^1.3.13",
     "@types/node": "^22.15.21",
     "typescript": "^5.8.3"
   }
