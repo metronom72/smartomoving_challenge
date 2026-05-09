@@ -1,23 +1,9 @@
-export interface AircallUtterance {
-  start?: number;
-  end?: number;
-  speaker?: string;
-  text?: string;
-}
+import { AircallCallSchema, type AircallCall } from "./schemas/aircall";
 
-export interface AircallCall {
-  direction?: string;
-  duration?: number;
-  transcription?: {
-    content?: {
-      utterances?: AircallUtterance[];
-    };
-  };
-}
+export type { AircallCall };
 
 export function parseAircallCall(raw: unknown): AircallCall {
-  if (typeof raw !== "object" || raw === null) throw new Error("Aircall JSON must be an object");
-  return raw as AircallCall;
+  return AircallCallSchema.parse(raw);
 }
 
 export function hasUsableTranscript(call: AircallCall): boolean {

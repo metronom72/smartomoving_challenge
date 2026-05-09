@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 /** Fixed taxonomy (11 values) for ops routing and validation. */
 export const FINDING_CATEGORIES = [
   "HEAVY_ITEMS",
@@ -13,65 +15,31 @@ export const FINDING_CATEGORIES = [
   "OTHER",
 ] as const;
 
-export type FindingCategory = (typeof FINDING_CATEGORIES)[number];
+export const FindingCategorySchema = z.enum(FINDING_CATEGORIES);
+export type FindingCategory = z.infer<typeof FindingCategorySchema>;
 
-export type ConfidenceLevel = "high" | "medium" | "low";
+const ConfidenceSchema = z.enum(["high", "medium", "low"]);
+export type ConfidenceLevel = z.infer<typeof ConfidenceSchema>;
 
-export interface GapFinding {
-  category: FindingCategory;
-  summary: string;
-  quote: string;
-  confidence: ConfidenceLevel;
-}
+const trimmedNonempty = z.string().transform((s) => s.trim()).pipe(z.string().min(1));
 
-export interface FindingsPayload {
-  findings: GapFinding[];
-}
+const GapFindingSchema = z.object({
+  category: FindingCategorySchema,
+  summary: trimmedNonempty,
+  quote: trimmedNonempty,
+  confidence: ConfidenceSchema,
+});
 
-const CATEGORY_SET = new Set<string>(FINDING_CATEGORIES);
+export type GapFinding = z.infer<typeof GapFindingSchema>;
 
-function isConfidence(s: string): s is ConfidenceLevel {
-  return s === "high" || s === "medium" || s === "low";
-}
+export const FindingsPayloadSchema = z.object({
+  findings: z.array(GapFindingSchema),
+});
+
+export type FindingsPayload = z.infer<typeof FindingsPayloadSchema>;
 
 export function normalizeFindingsPayload(raw: unknown): FindingsPayload {
-  if (typeof raw !== "object" || raw === null || !("findings" in raw)) {
-    throw new Error('Model output must be a JSON object with a "findings" array');
-  }
-  const findingsRaw = (raw as { findings: unknown }).findings;
-  if (!Array.isArray(findingsRaw)) throw new Error('"findings" must be an array');
-
-  const findings: GapFinding[] = [];
-  for (let i = 0; i < findingsRaw.length; i++) {
-    const item = findingsRaw[i];
-    if (typeof item !== "object" || item === null) {
-      throw new Error(`findings[${i}] must be an object`);
-    }
-    const o = item as Record<string, unknown>;
-    const category = o["category"];
-    const summary = o["summary"];
-    const quote = o["quote"];
-    const confidence = o["confidence"];
-    if (typeof category !== "string" || !CATEGORY_SET.has(category)) {
-      throw new Error(`findings[${i}].category must be one of: ${FINDING_CATEGORIES.join(", ")}`);
-    }
-    if (typeof summary !== "string" || !summary.trim()) {
-      throw new Error(`findings[${i}].summary must be a non-empty string`);
-    }
-    if (typeof quote !== "string" || !quote.trim()) {
-      throw new Error(`findings[${i}].quote must be a non-empty verbatim substring from the transcript`);
-    }
-    if (typeof confidence !== "string" || !isConfidence(confidence)) {
-      throw new Error(`findings[${i}].confidence must be "high", "medium", or "low"`);
-    }
-    findings.push({
-      category: category as FindingCategory,
-      summary: summary.trim(),
-      quote: quote.trim(),
-      confidence,
-    });
-  }
-  return { findings };
+  return FindingsPayloadSchema.parse(raw);
 }
 
 export function extractJsonObject(text: string): string {

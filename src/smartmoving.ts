@@ -1,45 +1,12 @@
-export interface SmartMovingStop {
-  order?: number;
-  type?: string;
-  addressFullAddress?: string | null;
-  addressUnit?: string | null;
-  propertyTypeName?: string | null;
-  stairs?: number | null;
-  hasElevator?: boolean | null;
-  parkingDescription?: string | null;
-  notes?: string | null;
-}
+import {
+  SmartMovingOpportunitySchema,
+  type SmartMovingOpportunity,
+} from "./schemas/smartmoving";
 
-export interface SmartMovingInventoryItem {
-  name?: string;
-  quantity?: number;
-  estimatedWeightLbs?: number;
-}
-
-export interface SmartMovingJob {
-  jobNumber?: string;
-  quoteNumber?: number;
-  statusName?: string | null;
-  typeName?: string;
-  arrivalWindow?: string | null;
-  serviceDate?: number | string | null;
-  stops?: SmartMovingStop[];
-  notes?: Record<string, string | null | undefined> | null;
-  inventory?: {
-    items?: SmartMovingInventoryItem[];
-  };
-}
-
-export interface SmartMovingOpportunity {
-  quoteNumber?: number;
-  statusName?: string | null;
-  serviceDate?: number | string | null;
-  jobs?: SmartMovingJob[];
-}
+export type { SmartMovingOpportunity };
 
 export function parseSmartMovingOpportunity(raw: unknown): SmartMovingOpportunity {
-  if (typeof raw !== "object" || raw === null) throw new Error("SmartMoving JSON must be an object");
-  return raw as SmartMovingOpportunity;
+  return SmartMovingOpportunitySchema.parse(raw);
 }
 
 function omitNullish(label: string, value: unknown): string | undefined {
@@ -57,7 +24,9 @@ function flattenNotes(notes: Record<string, string | null | undefined> | null | 
   return out;
 }
 
-function summarizeInventory(items: SmartMovingInventoryItem[] | undefined): string[] {
+function summarizeInventory(
+  items: Array<{ name?: string; quantity?: number; estimatedWeightLbs?: number | null }> | undefined,
+): string[] {
   if (!items?.length) return ["inventory.items: (none listed)"];
   return items.map((it) => {
     const name = typeof it.name === "string" ? it.name : "item";

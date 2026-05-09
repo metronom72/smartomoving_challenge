@@ -90,30 +90,127 @@ Stdout:
 | `SHORT_OUTBOUND_MAX_DURATION_SECONDS` | `filters.shortOutboundMaxDurationSeconds` |
 | `TRANSCRIPT_MAX_CHARS` | `shaping.transcriptMaxChars` |
 
+There is **no** `SHORT_CALL_THRESHOLD` alias — use `SHORT_OUTBOUND_MAX_DURATION_SECONDS` so behavior matches [`USER_STORIES.md`](USER_STORIES.md).
+
 Invalid numeric env values fail fast at startup with a clear error.
+
+### Schema validation (Zod)
+
+The PoC validates **Aircall** and **SmartMoving** JSON against narrow Zod schemas for the fields the CLI reads, validates merged **config** JSON, and validates **model output** (`findings`) before writing stdout. Malformed inputs or config produce a non-zero exit and a `prettifyError` summary on stderr; invalid model JSON after the one retry fails the same way.
 
 ## Prompt design (trade-offs)
 
 - **Token budget vs recall:** The model sees a **shaped transcript** (`agent:` / `external:` lines) and a **CRM digest** built in code (jobs, stops, notes, inventory summary) instead of full raw JSON — cheaper and more consistent than dumping payloads, with a small risk of over-compressing edge fields.
-- **Strict JSON vs prose:** The tool asks for **JSON only** and validates `findings` against a fixed schema; on parse/validation failure it **retries once** with a corrective instruction, then exits non-zero if still invalid.
+- **Strict JSON vs prose:** The tool asks for **JSON only** and validates `findings` with **Zod**; on parse/validation failure it **retries once** with a corrective instruction, then exits non-zero if still invalid.
 - **“Only gaps”:** Instructions emphasize **operational facts stated on the call** that are **missing or contradicted** in CRM, reducing false positives from generic advice.
 - **Category taxonomy:** Eleven fixed categories (`HEAVY_ITEMS`, `SPECIAL_HANDLING`, `ACCESS`, …, `OTHER`) keep outputs actionable for routing and UI.
 - **Why Haiku for volume:** Haiku 4.5 is the fastest/cheapest tier in Anthropic’s lineup for this generation; see [pricing](https://www.anthropic.com/pricing) and the cost estimate below.
 
 ## Sample outputs (stdout)
 
-> **Note:** Automated runs in this environment did not have `ANTHROPIC_API_KEY` set. The JSON below matches the **committed reference captures** under `outputs/` (schema-identical to real CLI stdout). Re-run the commands above locally with a key to capture **live** model output.
+> **Note:** No `ANTHROPIC_API_KEY` was available in the automation environment, so the JSON below is the **committed reference capture** (same shape as live CLI stdout). With a key, run the sample commands and diff against `outputs/*.json` if you want to compare model drift.
 
-**Inbound pair** (`aircall_sample_call.json` + `smartmoving_sample_opportunity.json`) — see [`outputs/inbound_sample.json`](outputs/inbound_sample.json).
+### Inbound pair
 
-**Outbound pair** (`aircall_sample_call_outbound.json` + `smartmoving_sample_opportunity_outbound.json`) — see [`outputs/outbound_sample.json`](outputs/outbound_sample.json).
+`bun src/detect_gaps.ts aircall_sample_call.json smartmoving_sample_opportunity.json`
 
-To print the same to your terminal:
-
-```bash
-cat outputs/inbound_sample.json
-cat outputs/outbound_sample.json
+```json
+{
+  "findings": [
+    {
+      "category": "HEAVY_ITEMS",
+      "summary": "Customer mentioned a Peloton Bike Plus (~140 lbs) upstairs that is not listed in CRM inventory or heavy-item notes.",
+      "quote": "we have this Peloton in the upstairs bedroom that we forgot to tell you about. It's the bigger one, the Bike Plus, I think it weighs around 140 pounds.",
+      "confidence": "high"
+    },
+    {
+      "category": "ACCESS",
+      "summary": "Destination access uses a rear service entrance off the alley rather than the front entrance; CRM stop notes do not document this routing constraint.",
+      "quote": "The building entrance is actually around the back, not the front like Google Maps shows. There's a service entrance off the alley.",
+      "confidence": "high"
+    },
+    {
+      "category": "BUILDING_MGMT",
+      "summary": "Building requires a COI emailed to the manager at least 48 hours before move-in; CRM digest does not record the COI requirement, recipient email, or deadline.",
+      "quote": "they need a Certificate of Insurance, a COI, before move-in day. They were really firm about that. They want it sent to manager@elmtowers.example.com at least 48 hours before.",
+      "confidence": "high"
+    },
+    {
+      "category": "ACCESS",
+      "summary": "Freight elevator must be reserved between 10 AM and 2 PM and regular elevator is disallowed for movers; CRM elevator field does not capture this reservation window or restriction.",
+      "quote": "Second, the freight elevator has to be reserved between 10 am and 2 pm. They won't let movers use the regular elevator at all.",
+      "confidence": "high"
+    },
+    {
+      "category": "COMMUNICATION_PREFS",
+      "summary": "Point of contact at destination speaks Russian with limited English; CRM notes do not mention language preference for onsite contact.",
+      "quote": "my mother-in-law is going to be at the destination to let the crew in. She doesn't speak much English. She speaks Russian mainly.",
+      "confidence": "medium"
+    },
+    {
+      "category": "HEAVY_ITEMS",
+      "summary": "Customer disclosed a large empty 75-gallon saltwater aquarium to be moved; CRM inventory lists no aquarium or comparable fragile tank item.",
+      "quote": "We have a saltwater fish tank, it's a 75 gallon tank. We're going to drain it ourselves but the tank itself, the empty glass tank, do you guys move that?",
+      "confidence": "high"
+    },
+    {
+      "category": "PAYMENT",
+      "summary": "Agent stated a 3% credit card processing fee on move day; CRM charges and notes do not document that card payments incur an added percentage fee.",
+      "quote": "Credit card payment is fine, there's a small processing fee of three percent that gets added on the day of.",
+      "confidence": "high"
+    }
+  ]
+}
 ```
+
+### Outbound pair
+
+`bun src/detect_gaps.ts aircall_sample_call_outbound.json smartmoving_sample_opportunity_outbound.json`
+
+```json
+{
+  "findings": [
+    {
+      "category": "ADDRESS_CHANGE",
+      "summary": "Customer is moving to a new Glendale condo address with unit 12B; CRM still shows Pasadena as the destination.",
+      "quote": "the destination address is different. We were going to move to the place in Pasadena but the deal fell through. We're moving to Glendale instead. The new address is 847 North Brand Boulevard, unit 12B.",
+      "confidence": "high"
+    },
+    {
+      "category": "BUILDING_MGMT",
+      "summary": "HOA requires a $400 elevator deposit and freight elevator scheduling with weekday-only move hours (9 AM–4 PM); CRM destination stop does not capture deposit, freight rules, or HOA timing constraints.",
+      "quote": "the HOA requires us to pay a $400 elevator deposit and we have to schedule the freight elevator. They only allow moves Monday through Friday between 9 am and 4 pm.",
+      "confidence": "high"
+    },
+    {
+      "category": "SPECIAL_HANDLING",
+      "summary": "Customer disclosed a baby grand piano at the origin (~600 lbs Yamaha); CRM inventory does not list a piano or specialist piano handling.",
+      "quote": "we have a baby grand piano. It's been in the family for years. It's at the origin in our living room.",
+      "confidence": "high"
+    },
+    {
+      "category": "TIMING",
+      "summary": "Customer requested a later arrival window (10–11 AM) due to a morning conflict; CRM still shows 7–8 AM.",
+      "quote": "Can we make it a little later? Like 9 or 10 am? My daughter has a soccer game in the morning we want to drop her off at first.",
+      "confidence": "high"
+    },
+    {
+      "category": "PAYMENT",
+      "summary": "Customer prefers Zelle to avoid the credit card processing fee on a large total; CRM payment preferences do not document Zelle as the intended method.",
+      "quote": "you guys take Zelle right? Because the credit card fee you mentioned, three percent, on a five thousand dollar move, that's like a hundred fifty dollars. I'd rather just do Zelle.",
+      "confidence": "medium"
+    },
+    {
+      "category": "OTHER",
+      "summary": "Customer mentioned a dog allergy concern for crew bringing animals; CRM notes do not capture this preference (low operational risk but was explicitly stated).",
+      "quote": "I'm allergic to dogs, so if any of the movers want to bring a service dog or anything, please don't.",
+      "confidence": "low"
+    }
+  ]
+}
+```
+
+Copies also live under [`outputs/inbound_sample.json`](outputs/inbound_sample.json) and [`outputs/outbound_sample.json`](outputs/outbound_sample.json).
 
 ## Cost per 1,000 calls (illustrative)
 
@@ -142,7 +239,7 @@ Per **1,000** calls:
 - **Object storage** for raw Aircall/SmartMoving payloads; **versioned prompts** and golden-file regression on fixtures under `outputs/` or CI snapshots.
 - **PII policy:** redact or segment logs; avoid echoing full transcripts in error reports.
 - **Retries/backoff** for 429/5xx; **rate limits** and per-tenant cost dashboards.
-- **Schema validation** at the boundary (Zod/JSON Schema) and **human review queue** for `low` confidence.
+- **Human review queue** for `low` confidence and richer policy than this PoC’s fixed taxonomy.
 - **Optional first-stage filter** (rules, embeddings, or smaller model) before Haiku for very high volume.
 - **SmartMoving write-back workflow** with audit trail and permissions — out of scope for this PoC.
 

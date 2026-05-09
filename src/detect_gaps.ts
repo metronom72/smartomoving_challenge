@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import Anthropic from "@anthropic-ai/sdk";
+import { prettifyError, ZodError } from "zod";
 import {
   hasUsableTranscript,
   parseAircallCall,
@@ -27,6 +28,11 @@ function readJson(path: string): unknown {
     const msg = e instanceof Error ? e.message : String(e);
     throw new Error(`Failed to read JSON from ${path}: ${msg}`);
   }
+}
+
+function exitWithZodIssue(context: string, err: ZodError): never {
+  process.stderr.write(`${context}\n${prettifyError(err)}\n`);
+  process.exit(1);
 }
 
 /**
@@ -113,13 +119,33 @@ async function main(): Promise<void> {
   }
 
   const [aircallPath, smartmovingPath] = argv;
-  const cfg = loadConfig(process.cwd());
+
+  let cfg;
+  try {
+    cfg = loadConfig(process.cwd());
+  } catch (e) {
+    if (e instanceof ZodError) exitWithZodIssue("Invalid configuration JSON shape:", e);
+    throw e;
+  }
 
   const aircallRaw = readJson(aircallPath!);
   const smRaw = readJson(smartmovingPath!);
 
-  const call = parseAircallCall(aircallRaw);
-  const opp = parseSmartMovingOpportunity(smRaw);
+  let call;
+  try {
+    call = parseAircallCall(aircallRaw);
+  } catch (e) {
+    if (e instanceof ZodError) exitWithZodIssue(`Invalid Aircall JSON shape (${aircallPath}):`, e);
+    throw e;
+  }
+
+  let opp;
+  try {
+    opp = parseSmartMovingOpportunity(smRaw);
+  } catch (e) {
+    if (e instanceof ZodError) exitWithZodIssue(`Invalid SmartMoving JSON shape (${smartmovingPath}):`, e);
+    throw e;
+  }
 
   if (!hasUsableTranscript(call)) {
     printFindings({ findings: [] });
@@ -165,6 +191,10 @@ async function main(): Promise<void> {
       true,
     );
   } catch (e) {
+    if (e instanceof ZodError) {
+      process.stderr.write(`Model output failed schema validation:\n${prettifyError(e)}\n`);
+      process.exit(1);
+    }
     const msg = e instanceof Error ? e.message : String(e);
     process.stderr.write(`Anthropic request or JSON validation failed: ${msg}\n`);
     process.exit(1);

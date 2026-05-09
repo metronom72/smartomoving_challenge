@@ -1,19 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
+import {
+  GapDetectorConfigSchema,
+  type GapDetectorConfig,
+} from "./schemas/gap-config";
 
-export interface GapDetectorConfig {
-  anthropic: {
-    model: string;
-    maxTokens: number;
-    timeoutMs: number;
-  };
-  filters: {
-    shortOutboundMaxDurationSeconds: number;
-  };
-  shaping: {
-    transcriptMaxChars: number;
-  };
-}
+export type { GapDetectorConfig };
 
 function parsePositiveInt(raw: string, name: string): number {
   const n = Number.parseInt(raw, 10);
@@ -58,53 +50,8 @@ function readJsonFile(path: string): unknown {
   return JSON.parse(text) as unknown;
 }
 
-function assertConfigShape(obj: unknown): GapDetectorConfig {
-  if (typeof obj !== "object" || obj === null) throw new Error("Config root must be an object");
-  const c = obj as Record<string, unknown>;
-  const anthropic = c["anthropic"];
-  const filters = c["filters"];
-  const shaping = c["shaping"];
-  if (typeof anthropic !== "object" || anthropic === null) throw new Error('Config missing "anthropic" object');
-  if (typeof filters !== "object" || filters === null) throw new Error('Config missing "filters" object');
-  if (typeof shaping !== "object" || shaping === null) throw new Error('Config missing "shaping" object');
-
-  const a = anthropic as Record<string, unknown>;
-  const f = filters as Record<string, unknown>;
-  const s = shaping as Record<string, unknown>;
-
-  const model = a["model"];
-  const maxTokens = a["maxTokens"];
-  const timeoutMs = a["timeoutMs"];
-  const shortOutbound = f["shortOutboundMaxDurationSeconds"];
-  const transcriptMaxChars = s["transcriptMaxChars"];
-
-  if (typeof model !== "string" || !model.trim()) throw new Error("anthropic.model must be a non-empty string");
-  if (typeof maxTokens !== "number" || !Number.isFinite(maxTokens) || maxTokens <= 0) {
-    throw new Error("anthropic.maxTokens must be a positive number");
-  }
-  if (typeof timeoutMs !== "number" || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-    throw new Error("anthropic.timeoutMs must be a positive number");
-  }
-  if (
-    typeof shortOutbound !== "number" ||
-    !Number.isFinite(shortOutbound) ||
-    shortOutbound < 0
-  ) {
-    throw new Error("filters.shortOutboundMaxDurationSeconds must be a non-negative number");
-  }
-  if (
-    typeof transcriptMaxChars !== "number" ||
-    !Number.isFinite(transcriptMaxChars) ||
-    transcriptMaxChars <= 0
-  ) {
-    throw new Error("shaping.transcriptMaxChars must be a positive number");
-  }
-
-  return {
-    anthropic: { model: model.trim(), maxTokens, timeoutMs },
-    filters: { shortOutboundMaxDurationSeconds: shortOutbound },
-    shaping: { transcriptMaxChars },
-  };
+function parseGapConfig(obj: unknown): GapDetectorConfig {
+  return GapDetectorConfigSchema.parse(obj);
 }
 
 /** Resolve path relative to cwd unless absolute. */
@@ -123,12 +70,12 @@ export function loadConfig(cwd: string = process.cwd()): GapDetectorConfig {
   const defaultPath = resolveConfigPath(join("config", "default.json"), cwd);
   const primaryPath = envPrimary ? resolveConfigPath(envPrimary, cwd) : defaultPath;
 
-  let cfg = assertConfigShape(readJsonFile(primaryPath));
+  let cfg = parseGapConfig(readJsonFile(primaryPath));
 
   const localPath = resolveConfigPath(join("config", "local.json"), cwd);
   if (!envPrimary && existsSync(localPath)) {
     const localRaw = readJsonFile(localPath);
-    cfg = assertConfigShape(deepMergePlainObjects(cfg, localRaw));
+    cfg = parseGapConfig(deepMergePlainObjects(cfg, localRaw));
   }
 
   const modelEnv = process.env["ANTHROPIC_MODEL"];
@@ -164,5 +111,5 @@ export function loadConfig(cwd: string = process.cwd()): GapDetectorConfig {
     });
   }
 
-  return cfg;
+  return parseGapConfig(cfg);
 }
