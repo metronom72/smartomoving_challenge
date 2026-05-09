@@ -9,12 +9,22 @@ import {
 } from "./aircall";
 import { loadConfig } from "./config";
 import {
-  FINDING_CATEGORIES,
   gapFindingsTool,
   normalizeFindingsPayload,
   SUBMIT_GAP_FINDINGS_TOOL_NAME,
   type FindingsPayload,
 } from "./findings";
+import {
+  effectiveHaikuMaxOutputTokens,
+  HAIKU_MAX_OUTPUT_TOKENS,
+  isHaikuModel,
+  resolveHaikuTranscriptMaxChars,
+} from "./haiku_model_limits";
+import {
+  appendInvalidGapFindingsToolRetryHint,
+  buildSystemPrompt,
+  buildUserPrompt,
+} from "./prompts";
 import { buildCrmDigest, parseSmartMovingOpportunity } from "./smartmoving";
 
 /** Haiku-tier list pricing (USD per million tokens), aligned with README. */
@@ -65,43 +75,6 @@ function exitWithZodIssue(context: string, err: ZodError): never {
   process.exit(1);
 }
 
-/**
- * Prompt design (see README for full trade-offs): compact CRM digest + line-shaped
- * transcript reduce tokens; structured tool output + Zod validation; “gaps only”
- * and fixed categories reduce false positives; Haiku chosen for cost/latency at volume.
- */
-function buildSystemPrompt(): string {
-  const cats = FINDING_CATEGORIES.join(", ");
-  return [
-    "You are an analyst for a moving company CRM quality check.",
-    "Compare operational facts explicitly stated in the CALL TRANSCRIPT against what is recorded or clearly implied in the CRM DIGEST.",
-    "Only report GAPS: facts mentioned on the call that are missing, contradicted, or not reasonably reflected in the CRM digest.",
-    "If the agent said they would note something but the CRM digest does not show it, that is still a gap.",
-    "Do NOT report items that are already adequately captured in CRM notes, stops, inventory, or other fields.",
-    "Inbound calls often supplement a Booked job; outbound calls may reveal changes vs a Quoted snapshot — same gap rules apply.",
-    "",
-    `Each finding must use category exactly one of: ${cats}.`,
-    'confidence must be exactly "high", "medium", or "low".',
-    "quote must be a verbatim substring copied from the transcript (one utterance or contiguous substring), used as evidence.",
-    "summary must be a short factual description of the gap (one or two sentences max).",
-    "",
-    `Call ${SUBMIT_GAP_FINDINGS_TOOL_NAME} with: reasoning — short step-by-step comparison of transcript vs CRM digest (what you verified, what differs); findings — the gap list.`,
-    "If there are no gaps, use an empty findings array; reasoning should still briefly state what you compared and that nothing was missing or contradicted.",
-  ].join("\n");
-}
-
-function buildUserPrompt(transcript: string, crmDigest: string, callMeta: string): string {
-  return [
-    callMeta,
-    "",
-    "CALL TRANSCRIPT (speaker-prefixed lines):",
-    transcript,
-    "",
-    "CRM DIGEST:",
-    crmDigest,
-  ].join("\n");
-}
-
 function inputFromSubmitGapFindingsTool(content: Anthropic.Messages.ContentBlock[]): unknown {
   for (const block of content) {
     if (block.type === "tool_use" && block.name === SUBMIT_GAP_FINDINGS_TOOL_NAME) {
@@ -141,12 +114,7 @@ async function callAnthropic(
     return await run(user);
   } catch (e) {
     if (!retryOnBadJson) throw e;
-    const fixUser = [
-      user,
-      "",
-      `Your previous response was not usable: missing or invalid ${SUBMIT_GAP_FINDINGS_TOOL_NAME} arguments.`,
-      `Call ${SUBMIT_GAP_FINDINGS_TOOL_NAME} again with arguments that match the tool schema: non-empty reasoning string and findings array (empty array if none).`,
-    ].join("\n");
+    const fixUser = appendInvalidGapFindingsToolRetryHint(user);
     return await run(fixUser);
   }
 }
@@ -211,12 +179,41 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const transcript = shapeTranscript(call, cfg.shaping.transcriptMaxChars);
   const crmDigest = buildCrmDigest(opp);
   const dir = typeof call.direction === "string" ? call.direction : "unknown";
   const dur =
     typeof call.duration === "number" && Number.isFinite(call.duration) ? String(call.duration) : "unknown";
   const callMeta = `CALL_META: direction=${dir}, duration_seconds=${dur}`;
+
+  const system = buildSystemPrompt();
+
+  let transcriptMaxChars = cfg.shaping.transcriptMaxChars;
+  if (isHaikuModel(cfg.anthropic.model)) {
+    const resolved = resolveHaikuTranscriptMaxChars(
+      system,
+      callMeta,
+      crmDigest,
+      cfg.anthropic.maxInputTokens,
+      cfg.shaping.transcriptMaxChars,
+    );
+    if (resolved < cfg.shaping.transcriptMaxChars) {
+      logInfo(
+        `Transcript cap lowered to ${resolved} characters to stay within configured max_input_tokens=${cfg.anthropic.maxInputTokens} (default from HAIKU_DESC.json unless overridden).`,
+      );
+    }
+    transcriptMaxChars = resolved;
+  }
+
+  const transcript = shapeTranscript(call, transcriptMaxChars);
+
+  const maxTokensRequest = isHaikuModel(cfg.anthropic.model)
+    ? effectiveHaikuMaxOutputTokens(cfg.anthropic.maxTokens)
+    : cfg.anthropic.maxTokens;
+  if (maxTokensRequest < cfg.anthropic.maxTokens) {
+    logInfo(
+      `max_tokens clamped from ${cfg.anthropic.maxTokens} to ${maxTokensRequest} (Haiku max_tokens=${HAIKU_MAX_OUTPUT_TOKENS} per HAIKU_DESC.json).`,
+    );
+  }
 
   // Anthropic may return HTTP 529 (overloaded) or other 5xx; the official SDK retries
   // those responses (and e.g. 429) with backoff. maxRetries: 3 is explicit resilience
@@ -227,7 +224,6 @@ async function main(): Promise<void> {
     maxRetries: 3,
   });
 
-  const system = buildSystemPrompt();
   const user = buildUserPrompt(transcript, crmDigest, callMeta);
 
   logInfo(`Calling Anthropic model: ${cfg.anthropic.model}`);
@@ -237,7 +233,7 @@ async function main(): Promise<void> {
     payload = await callAnthropic(
       client,
       cfg.anthropic.model,
-      cfg.anthropic.maxTokens,
+      maxTokensRequest,
       system,
       user,
       true,

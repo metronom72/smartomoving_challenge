@@ -1,11 +1,36 @@
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import {
+  HAIKU_MAX_INPUT_TOKENS,
+  HAIKU_MAX_OUTPUT_TOKENS,
+  HAIKU_MODEL_ID,
+} from "./haiku_model_limits";
+import {
   GapDetectorConfigSchema,
   type GapDetectorConfig,
 } from "./schemas/gap-config";
 
 export type { GapDetectorConfig };
+
+/**
+ * Baseline before `config/default.json` (or `CONFIG_PATH` / `GAP_DETECTOR_CONFIG`):
+ * model, token limits from `HAIKU_DESC.json`; other keys are static app defaults.
+ * JSON files and env vars override these values.
+ */
+export const GAP_DETECTOR_BASE_DEFAULTS: GapDetectorConfig = {
+  anthropic: {
+    model: HAIKU_MODEL_ID,
+    maxTokens: HAIKU_MAX_OUTPUT_TOKENS,
+    maxInputTokens: HAIKU_MAX_INPUT_TOKENS,
+    timeoutMs: 120_000,
+  },
+  filters: {
+    shortOutboundMaxDurationSeconds: 30,
+  },
+  shaping: {
+    transcriptMaxChars: 50_000,
+  },
+};
 
 function parsePositiveInt(raw: string, name: string): number {
   const n = Number.parseInt(raw, 10);
@@ -60,17 +85,19 @@ function resolveConfigPath(p: string, cwd: string): string {
 }
 
 /**
- * Loads committed defaults from `config/default.json` unless `CONFIG_PATH` or
- * `GAP_DETECTOR_CONFIG` points at another JSON file (full file replaces the
- * default file path). When using the default path, merges `config/local.json`
- * if present. Environment variables override file values last.
+ * Loads config: **Haiku-backed base** (`GAP_DETECTOR_BASE_DEFAULTS` from `HAIKU_DESC.json`
+ * for model / token limits) → primary JSON (`config/default.json` unless `CONFIG_PATH` or
+ * `GAP_DETECTOR_CONFIG`) → optional `config/local.json` when not using a replacement path →
+ * environment variables last.
  */
 export function loadConfig(cwd: string = process.cwd()): GapDetectorConfig {
   const envPrimary = process.env["GAP_DETECTOR_CONFIG"] ?? process.env["CONFIG_PATH"];
   const defaultPath = resolveConfigPath(join("config", "default.json"), cwd);
   const primaryPath = envPrimary ? resolveConfigPath(envPrimary, cwd) : defaultPath;
 
-  let cfg = parseGapConfig(readJsonFile(primaryPath));
+  let cfg = parseGapConfig(
+    deepMergePlainObjects(GAP_DETECTOR_BASE_DEFAULTS, readJsonFile(primaryPath)),
+  );
 
   const localPath = resolveConfigPath(join("config", "local.json"), cwd);
   if (!envPrimary && existsSync(localPath)) {
@@ -86,6 +113,13 @@ export function loadConfig(cwd: string = process.cwd()): GapDetectorConfig {
   const maxTok = process.env["ANTHROPIC_MAX_TOKENS"];
   if (maxTok !== undefined && maxTok.trim() !== "") {
     cfg = deepMergeGapConfig(cfg, { anthropic: { maxTokens: parsePositiveInt(maxTok, "ANTHROPIC_MAX_TOKENS") } });
+  }
+
+  const maxIn = process.env["ANTHROPIC_MAX_INPUT_TOKENS"];
+  if (maxIn !== undefined && maxIn.trim() !== "") {
+    cfg = deepMergeGapConfig(cfg, {
+      anthropic: { maxInputTokens: parsePositiveInt(maxIn, "ANTHROPIC_MAX_INPUT_TOKENS") },
+    });
   }
 
   const timeout = process.env["ANTHROPIC_TIMEOUT_MS"];

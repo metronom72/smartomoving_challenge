@@ -62,20 +62,22 @@ Stdout (stderr may include `[INFO]` lines):
 
 ### Files
 
-- **`config/default.json`** — committed non-secret defaults (model, thresholds, caps).
+- **Program baseline** — `GAP_DETECTOR_BASE_DEFAULTS` in [`src/config.ts`](src/config.ts): model id, `maxTokens`, and `maxInputTokens` match [`HAIKU_DESC.json`](HAIKU_DESC.json); filters, transcript cap, and default timeout are static defaults. JSON and env override these.
+- **`config/default.json`** — committed overrides (e.g. `anthropic.timeoutMs`); omit keys you want to keep from the baseline.
 - **`config/local.json`** — optional; **gitignored**. Merged **after** `default.json` when you are **not** pointing at a replacement file via `CONFIG_PATH` or `GAP_DETECTOR_CONFIG`.
-- **`CONFIG_PATH`** or **`GAP_DETECTOR_CONFIG`** — optional path to a JSON file that **replaces** the primary file read (same schema as `default.json`). When either is set, **`config/local.json` is not merged** (matches the implementation in `src/config.ts`).
+- **`CONFIG_PATH`** or **`GAP_DETECTOR_CONFIG`** — optional path to a JSON file merged **on top of the same baseline** (same schema as `default.json`). When either is set, **`config/local.json` is not merged** (matches the implementation in `src/config.ts`).
 
 ### Precedence
 
-`default.json` → optional `local.json` (if allowed) → **environment variables override** any file value.
+Haiku baseline (`HAIKU_DESC.json` via `GAP_DETECTOR_BASE_DEFAULTS`) → primary JSON (`default.json` or `CONFIG_PATH` / `GAP_DETECTOR_CONFIG`) → optional `local.json` (if allowed) → **environment variables override** any file value.
 
-### Default keys (`config/default.json`)
+### Config keys (merge into baseline)
 
 | Key | Purpose |
 |-----|---------|
 | `anthropic.model` | Messages API model id |
-| `anthropic.maxTokens` | Response budget |
+| `anthropic.maxTokens` | API `max_tokens` response budget (Haiku default: `max_tokens` in `HAIKU_DESC.json`) |
+| `anthropic.maxInputTokens` | Input context limit used for transcript budgeting (Haiku default: `max_input_tokens` in `HAIKU_DESC.json`) |
 | `anthropic.timeoutMs` | SDK request timeout |
 | `filters.shortOutboundMaxDurationSeconds` | Outbound calls shorter than this skip the LLM |
 | `shaping.transcriptMaxChars` | Safety cap on shaped transcript length |
@@ -85,9 +87,10 @@ Stdout (stderr may include `[INFO]` lines):
 | Variable | Overrides |
 |----------|-----------|
 | **`ANTHROPIC_API_KEY`** | *(required for LLM path; **environment only** — never put this in JSON)* |
-| `CONFIG_PATH` **or** `GAP_DETECTOR_CONFIG` | Primary config file path (replaces `config/default.json` as the base file) |
+| `CONFIG_PATH` **or** `GAP_DETECTOR_CONFIG` | Primary config JSON path (merged after the Haiku baseline instead of `config/default.json`) |
 | `ANTHROPIC_MODEL` | `anthropic.model` |
 | `ANTHROPIC_MAX_TOKENS` | `anthropic.maxTokens` (positive integer) |
+| `ANTHROPIC_MAX_INPUT_TOKENS` | `anthropic.maxInputTokens` (positive integer) |
 | `ANTHROPIC_TIMEOUT_MS` | `anthropic.timeoutMs` (positive integer) |
 | `SHORT_OUTBOUND_MAX_DURATION_SECONDS` | `filters.shortOutboundMaxDurationSeconds` |
 | `TRANSCRIPT_MAX_CHARS` | `shaping.transcriptMaxChars` |
