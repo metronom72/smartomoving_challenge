@@ -1,0 +1,13 @@
+{
+  "anthropic": {
+    "model": "claude-haiku-4-5-20251001",
+    "maxTokens": 4096,
+    "timeoutMs": 120000
+  },
+  "filters": {
+    "shortOutboundMaxDurationSeconds": 30
+  },
+  "shaping": {
+    "transcriptMaxChars": 50000
+  }
+}
