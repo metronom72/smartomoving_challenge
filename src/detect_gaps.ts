@@ -218,9 +218,13 @@ async function main(): Promise<void> {
     typeof call.duration === "number" && Number.isFinite(call.duration) ? String(call.duration) : "unknown";
   const callMeta = `CALL_META: direction=${dir}, duration_seconds=${dur}`;
 
+  // Anthropic may return HTTP 529 (overloaded) or other 5xx; the official SDK retries
+  // those responses (and e.g. 429) with backoff. maxRetries: 3 is explicit resilience
+  // beyond the SDK default (2).
   const client = new Anthropic({
     apiKey: apiKey.trim(),
     timeout: cfg.anthropic.timeoutMs,
+    maxRetries: 3,
   });
 
   const system = buildSystemPrompt();
