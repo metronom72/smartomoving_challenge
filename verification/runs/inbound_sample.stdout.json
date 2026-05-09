@@ -1,0 +1,46 @@
+{
+  "findings": [
+    {
+      "category": "INVENTORY_OR_CONTENTS",
+      "summary": "Peloton Bike Plus (approximately 140 lbs) in upstairs bedroom not listed in inventory. Agent confirmed they would note it.",
+      "quote": "So first, my wife and I just realized we have this Peloton in the upstairs bedroom that we forgot to tell you about. It's the bigger one, the Bike Plus, I think it weighs around 140 pounds.",
+      "confidence": "high"
+    },
+    {
+      "category": "ACCESS",
+      "summary": "Destination access detail missing: service entrance off the alley at the back of the building is required; front entrance (as shown on Google Maps) is not to be used.",
+      "quote": "the building entrance is actually around the back, not the front like Google Maps shows. There's a service entrance off the alley. The building manager said the movers have to use that one.",
+      "confidence": "high"
+    },
+    {
+      "category": "BUILDING_MGMT",
+      "summary": "Certificate of Insurance (COI) requirement not recorded. Building manager requires COI sent to manager@elmtowers.example.com at least 48 hours before move-in day.",
+      "quote": "they need a Certificate of Insurance, a COI, before move-in day. They were really firm about that. They want it sent to manager@elmtowers.example.com at least 48 hours before.",
+      "confidence": "high"
+    },
+    {
+      "category": "BUILDING_MGMT",
+      "summary": "Freight elevator restriction not noted. Building manager requires freight elevator reservation between 10 am and 2 pm; regular elevator cannot be used by movers.",
+      "quote": "the freight elevator has to be reserved between 10 am and 2 pm. They won't let movers use the regular elevator at all.",
+      "confidence": "high"
+    },
+    {
+      "category": "COMMUNICATION_PREFS",
+      "summary": "Russian-speaking contact at destination not recorded. Mother-in-law will meet crew at destination and speaks mainly Russian; agent said they have Russian-speaking crew available.",
+      "quote": "my mother-in-law is going to be at the destination to let the crew in. She doesn't speak much English. She speaks Russian mainly.",
+      "confidence": "high"
+    },
+    {
+      "category": "INVENTORY_OR_CONTENTS",
+      "summary": "75-gallon saltwater fish tank (empty glass) not listed in inventory. Customer confirmed it will be drained before move-day and tank must be moved by crew.",
+      "quote": "We have a saltwater fish tank, it's a 75 gallon tank. We're going to drain it ourselves but the tank itself, the empty glass tank, do you guys move that?",
+      "confidence": "high"
+    },
+    {
+      "category": "PAYMENT",
+      "summary": "Credit card payment method and 3% processing fee not recorded in CRM. Agent confirmed customer will pay by credit card on move day with 3% fee added to final total.",
+      "quote": "The quote came out to about three thousand four hundred. We're planning to pay by credit card on the day. Is there a fee for that or is that included? Credit card payment is fine, there's a small processing fee of three percent that gets added on the day of.",
+      "confidence": "high"
+    }
+  ]
+}

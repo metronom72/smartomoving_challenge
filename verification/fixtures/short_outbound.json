@@ -1,0 +1,9 @@
+{
+  "direction": "outbound",
+  "duration": 12,
+  "transcription": {
+    "content": {
+      "utterances": [{ "speaker": "agent", "text": "Hi" }]
+    }
+  }
+}

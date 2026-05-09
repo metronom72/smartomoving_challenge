@@ -1,0 +1,11 @@
+bun test v1.3.13 (bf2e2cec)
+
+src/aircall.test.ts:
+(pass) shouldSkipCall > returns true when outbound duration is strictly below threshold [2.00ms]
+(pass) shouldSkipCall > returns false when not a short outbound (inbound or duration at/above threshold)
+(pass) PayloadBuilder.formatUtterances > formats utterances as speaker-prefixed lines joined by newlines [1.00ms]
+
+ 3 pass
+ 0 fail
+ 5 expect() calls
+Ran 3 tests across 1 file. [51.00ms]

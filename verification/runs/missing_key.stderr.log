@@ -1,0 +1,1 @@
+[ERROR] ANTHROPIC_API_KEY is required in the environment when the LLM path runs (transcript present and outbound duration guard passed).

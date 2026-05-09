@@ -1,0 +1,9 @@
+{
+  "direction": "inbound",
+  "duration": 120,
+  "transcription": {
+    "content": {
+      "utterances": []
+    }
+  }
+}
