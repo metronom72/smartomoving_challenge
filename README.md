@@ -235,15 +235,69 @@ Per **1,000** calls:
 
 **≈ $6.50 / 1,000 calls** (order-of-magnitude; rerun with your tokenizer counts and production prompts for budgeting). A large fraction of real traffic can exit early via **empty transcript** or **short outbound** guards at **$0** LLM cost.
 
-## Production (next steps — not implemented here)
+## Production Deployment
 
-- **Async queue + idempotency** for call/opportunity pairs; dedupe alerts per opportunity.
-- **Object storage** for raw Aircall/SmartMoving payloads; **versioned prompts** and golden-file regression on fixtures under `outputs/` or CI snapshots.
-- **PII policy:** redact or segment logs; avoid echoing full transcripts in error reports.
-- **Retries/backoff** for 429/5xx; **rate limits** and per-tenant cost dashboards.
-- **Human review queue** for `low` confidence and richer policy than this PoC’s fixed taxonomy.
-- **Optional first-stage filter** (rules, embeddings, or smaller model) before Haiku for very high volume.
-- **SmartMoving write-back workflow** with audit trail and permissions — out of scope for this PoC.
+**Target architecture (not implemented in this PoC).** The repository ships a synchronous CLI over local JSON files. In production, the same pipeline—parse and validate Aircall/SmartMoving shapes, shape the transcript and CRM digest, call the model, validate `findings` with Zod—should live in a **shared library** invoked by **background workers**, not by operators passing file paths. For what the PoC deliberately omits (no CRM write-back, no notifications), see **Non-goals** in [`USER_STORIES.md`](USER_STORIES.md).
+
+### From CLI to event-driven workers
+
+- **Today:** `bun src/detect_gaps.ts <aircall.json> <smartmoving.json>` runs end-to-end in one process.
+- **Production:** an **ingress** service accepts webhooks and enqueues work; **consumers** pull messages, fetch fresh CRM state over the network, run the detector, then apply **policy** (update SmartMoving, open a ticket, or notify a channel).
+
+### Target architecture (event-driven)
+
+1. **Trigger:** Configure Aircall (or your telephony layer) to emit a **webhook** when a call is ready for analysis—for example when a call ends **and** transcription is available. The exact event name is a product choice; the important part is not starting gap detection until the transcript is usable.
+2. **Ingress:** A small **HTTPS** endpoint (e.g. API Gateway + Lambda, or a container behind a load balancer) **verifies the webhook signature**, normalizes the payload, and returns **2xx quickly**. Heavy work must not block the webhook response, or providers will retry and you will amplify load.
+3. **Queue:** Publish a **durable message** (payload or pointer to object storage). **AWS SQS** (with a **dead-letter queue**) fits AWS-native deployments: built-in retries, DLQ, and operational simplicity. **RabbitMQ** is a reasonable alternative when you already run it, need richer routing, or want a portable queue layer across clouds.
+4. **Workers:** Horizontally scaled consumers (ECS/Fargate, Lambda with partial batch failure, Kubernetes, etc.) **dequeue**, resolve the SmartMoving opportunity (or internal ID), **fetch the current CRM digest via SmartMoving’s API** (or an internal BFF), then run the same detection path as the CLI to produce `findings`.
+5. **Outcomes:** Product policy chooses the side effect:
+   - **CRM update:** Patch notes or custom fields through SmartMoving’s API with explicit permissions and an **audit trail**; or
+   - **Alert / ticket:** Create a Jira/Linear item, Slack message, or email with links to the opportunity and supporting quotes when human review or safe rollout is required.
+
+```mermaid
+flowchart LR
+  aircallWebhook[Aircall_webhook]
+  httpIngest[HTTP_ingest]
+  messageQueue[Message_queue]
+  workerPool[Worker_pool]
+  crmOrAlert[SmartMoving_or_alert]
+  aircallWebhook --> httpIngest
+  httpIngest --> messageQueue
+  messageQueue --> workerPool
+  workerPool --> crmOrAlert
+```
+
+### Observability
+
+Split **service health** from **prompt and model quality**; both matter, but they answer different questions.
+
+- **Platform and application (e.g. Datadog or similar):** Distributed traces with a stable **correlation id** (and `call_id` where useful), metrics for **queue depth**, **end-to-end latency**, and **error rates** per stage (ingress, CRM fetch, LLM, downstream notifier). Alert on **DLQ growth**, sustained **429/5xx** from Anthropic or SmartMoving, and worker saturation.
+- **Prompts and LLM quality (e.g. LangSmith, Braintrust, or similar):** **Versioned** system and user prompts tied to deployments; offline **evals** on fixtures (golden outputs under [`outputs/`](outputs/) can seed regression baselines); **A/B** comparisons between prompt versions; dashboards for **token usage and cost** per version and per tenant. Human labels or LLM-as-judge can support scoring, with clear governance when judges are themselves LLMs.
+
+### State management and idempotency
+
+Webhooks and queues typically provide **at-least-once** delivery. Handlers must be **idempotent** so retries do not duplicate CRM updates or spam alerts.
+
+- **Idempotency key:** Prefer a natural key such as **`aircall_call_id`** (and, if one call can map to multiple opportunities, include **`smartmoving_opportunity_id`**). If the provider exposes a unique **delivery id**, you can store that as a secondary guard.
+- **Durable record:** Before or after successful processing, persist state in **DynamoDB, Postgres, or Redis**—for example `processed_at`, optional **`outcome_fingerprint`** (hash of inputs + prompt version, or of normalized `findings`)—so a duplicate message **no-ops** or performs a safe **upsert** only.
+- **Downstream deduplication:** When creating tickets or notifications, use **idempotent APIs** or a stable **external reference** (e.g. ticket keyed by `call_id`) so retries do not open duplicates.
+
+### PII and privacy (US and general compliance)
+
+**Before** sending transcript text to an LLM, run a **pre-LLM redaction pipeline**: pattern matching and, where needed, **NER**-style detection for **payment card numbers**, **SSN**-like sequences, and other sensitive tokens your legal/compliance team defines (sometimes partial redaction of phone or email depending on policy). The PoC does not implement this; production must treat unredacted transcripts as high-risk data.
+
+- **Logging and tracing:** Avoid writing **full raw transcripts** in plaintext logs or exception reports; use **masking**, **sampling**, and **retention limits** aligned with policy.
+- **Subprocessors:** Maintain appropriate agreements (e.g. **DPA**) with the model provider; understand **retention** and **training** options for API data and regional constraints if customers require them.
+
+### Additional production checklist
+
+- **Secrets:** API keys and webhook secrets in a managed store (e.g. AWS Secrets Manager), not in config repos.
+- **Object storage** for raw payloads when messages should stay small; **versioned prompts** and CI regression on fixtures or snapshots.
+- **Retries with backoff** for **429/5xx**; **rate limits** and per-tenant **cost** visibility.
+- **Feature flags** for **write-back vs alert-only** rollout.
+- **Human review queue** for **`low` confidence** findings and policies beyond this PoC’s fixed category taxonomy.
+- **Optional first-stage filter** (rules, embeddings, or a smaller model) before Haiku at very high volume.
+- **SmartMoving write-back** with permissions and audit—still **out of scope** for this PoC codebase until explicitly built.
 
 ## Typecheck
 
