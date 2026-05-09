@@ -31,15 +31,15 @@ Equivalent npm script:
 bun run detect -- aircall_sample_call.json smartmoving_sample_opportunity.json
 ```
 
-**Stdout** is a single JSON object: `{"findings":[...]}` (compact, one line per run in the default configuration).
+**Stdout** is a single JSON object: `{"findings":[...]}`, **pretty-printed** with indentation (`JSON.stringify(..., null, 2)`). **Stderr** is for everything else: `[INFO]` lines (for example skip reasons, model id, estimated API cost from token usage) and `[ERROR]` / validation details — so pipelines can capture JSON from stdout only.
 
 ### Pre-flight behavior (no API spend)
 
-| Condition | Stdout | Exit |
-|-----------|--------|------|
-| Transcription missing, `content` missing, `utterances` missing/empty, or no non-empty trimmed `text` | `{"findings":[]}` | `0` |
-| `direction === "outbound"` **and** `duration` **&lt;** `filters.shortOutboundMaxDurationSeconds` (default **30**) | `{"findings":[]}` | `0` |
-| LLM path needed but `ANTHROPIC_API_KEY` unset/blank | (stderr error) | `1` |
+| Condition | Stdout | Stderr (typical) | Exit |
+|-----------|--------|------------------|------|
+| Transcription missing, `content` missing, `utterances` missing/empty, or no non-empty trimmed `text` | `{"findings":[]}` (pretty) | `[INFO] Skipping LLM: no usable transcript` | `0` |
+| `direction === "outbound"` **and** `duration` **&lt;** `filters.shortOutboundMaxDurationSeconds` (default **30**) | `{"findings":[]}` (pretty) | `[INFO] Skipping LLM: outbound duration below threshold …` | `0` |
+| LLM path needed but `ANTHROPIC_API_KEY` unset/blank | — | `[ERROR] …` | `1` |
 
 **Inbound** short calls are **not** blanket-skipped: only sub-threshold **outbound** calls are treated as voicemail/no-answer for cost control.
 
@@ -50,10 +50,12 @@ echo '{"direction":"outbound","duration":12,"transcription":{"content":{"utteran
 bun src/detect_gaps.ts /tmp/short_out.json smartmoving_sample_opportunity.json
 ```
 
-Stdout:
+Stdout (stderr may include `[INFO]` lines):
 
 ```json
-{"findings":[]}
+{
+  "findings": []
+}
 ```
 
 ## Configuration
@@ -96,7 +98,7 @@ Invalid numeric env values fail fast at startup with a clear error.
 
 ### Schema validation (Zod)
 
-The PoC validates **Aircall** and **SmartMoving** JSON against narrow Zod schemas for the fields the CLI reads, validates merged **config** JSON, and validates **model output** (`findings`) before writing stdout. Malformed inputs or config produce a non-zero exit and a `prettifyError` summary on stderr; invalid model JSON after the one retry fails the same way.
+The PoC validates **Aircall** and **SmartMoving** JSON against narrow Zod schemas for the fields the CLI reads, validates merged **config** JSON, and validates **model output** (`findings`) before writing stdout. Malformed inputs or config produce a non-zero exit and a `prettifyError` summary on stderr; invalid model JSON after the one retry fails the same way. Successful LLM calls log an `[INFO] Estimated API cost: …` line on stderr using the response `usage` field and the Haiku list rates quoted below.
 
 ## Prompt design (trade-offs)
 

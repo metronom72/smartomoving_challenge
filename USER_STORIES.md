@@ -29,7 +29,7 @@ Short, testable stories tied to the PoC CLI and future product hooks. See the ro
 ## Engineer / integrator
 
 5. **As an** engineer running the PoC CLI, **I want** to pass paths to an Aircall JSON and a SmartMoving opportunity JSON and receive a single JSON object on stdout, **so that** I can plug the script into a pipeline or cron.  
-   *Acceptance:* Exit code `0` on success; stdout is exactly one JSON object `{"findings":[...]}`.
+   *Acceptance:* Exit code `0` on success; stdout is exactly one JSON object `{"findings":[...]}` (pretty-printed is fine). Progress, skip reasons, and cost hints go to stderr (`[INFO]` / `[ERROR]`), not stdout.
 
 6. **As an** engineer, **I want** the tool to output `{"findings":[]}` when transcription is missing or empty, **so that** voicemail and failed transcripts do not break automation.  
    *Acceptance:* Missing/empty `transcription.content.utterances` or no non-empty `text` after trim → stdout `{"findings":[]}`, exit `0`.

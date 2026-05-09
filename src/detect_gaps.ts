@@ -17,9 +17,36 @@ import {
 } from "./findings";
 import { buildCrmDigest, parseSmartMovingOpportunity } from "./smartmoving";
 
+/** Haiku-tier list pricing (USD per million tokens), aligned with README. */
+const USD_PER_MILLION_INPUT_TOKENS = 1;
+const USD_PER_MILLION_OUTPUT_TOKENS = 5;
+
+function logInfo(message: string): void {
+  console.error(`[INFO] ${message}`);
+}
+
+function logError(message: string): void {
+  console.error(`[ERROR] ${message}`);
+}
+
+function logEstimatedApiCost(usage: { input_tokens?: number; output_tokens?: number } | null | undefined): void {
+  if (!usage) {
+    logInfo("Anthropic response had no usage field; cost estimate unavailable.");
+    return;
+  }
+  const inputTokens = usage.input_tokens ?? 0;
+  const outputTokens = usage.output_tokens ?? 0;
+  const usd =
+    (inputTokens / 1_000_000) * USD_PER_MILLION_INPUT_TOKENS +
+    (outputTokens / 1_000_000) * USD_PER_MILLION_OUTPUT_TOKENS;
+  logInfo(
+    `Estimated API cost: $${usd.toFixed(4)} (input_tokens=${inputTokens}, output_tokens=${outputTokens})`,
+  );
+}
+
 function printFindings(payload: FindingsPayload): void {
   const out = { findings: payload.findings };
-  process.stdout.write(`${JSON.stringify(out)}\n`);
+  console.log(JSON.stringify(out, null, 2));
 }
 
 function readJson(path: string): unknown {
@@ -33,7 +60,8 @@ function readJson(path: string): unknown {
 }
 
 function exitWithZodIssue(context: string, err: ZodError): never {
-  process.stderr.write(`${context}\n${prettifyError(err)}\n`);
+  logError(context);
+  console.error(prettifyError(err));
   process.exit(1);
 }
 
@@ -104,6 +132,7 @@ async function callAnthropic(
         disable_parallel_tool_use: true,
       },
     });
+    logEstimatedApiCost(resp.usage);
     const raw = inputFromSubmitGapFindingsTool(resp.content);
     return normalizeFindingsPayload(raw);
   };
@@ -125,9 +154,7 @@ async function callAnthropic(
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   if (argv.length < 2) {
-    process.stderr.write(
-      "Usage: bun src/detect_gaps.ts <aircall.json> <smartmoving.json>\n",
-    );
+    logError("Usage: bun src/detect_gaps.ts <aircall.json> <smartmoving.json>");
     process.exit(2);
   }
 
@@ -161,19 +188,25 @@ async function main(): Promise<void> {
   }
 
   if (!hasUsableTranscript(call)) {
+    logInfo("Skipping LLM: no usable transcript");
     printFindings({ findings: [] });
     process.exit(0);
   }
 
   if (shouldSkipShortOutbound(call, cfg.filters.shortOutboundMaxDurationSeconds)) {
+    const d =
+      typeof call.duration === "number" && Number.isFinite(call.duration) ? call.duration : "unknown";
+    logInfo(
+      `Skipping LLM: outbound duration below threshold (duration_seconds=${d}, threshold_seconds=${cfg.filters.shortOutboundMaxDurationSeconds})`,
+    );
     printFindings({ findings: [] });
     process.exit(0);
   }
 
   const apiKey = process.env["ANTHROPIC_API_KEY"];
   if (!apiKey || !apiKey.trim()) {
-    process.stderr.write(
-      "ANTHROPIC_API_KEY is required in the environment when the LLM path runs (transcript present and outbound duration guard passed).\n",
+    logError(
+      "ANTHROPIC_API_KEY is required in the environment when the LLM path runs (transcript present and outbound duration guard passed).",
     );
     process.exit(1);
   }
@@ -193,6 +226,8 @@ async function main(): Promise<void> {
   const system = buildSystemPrompt();
   const user = buildUserPrompt(transcript, crmDigest, callMeta);
 
+  logInfo(`Calling Anthropic model: ${cfg.anthropic.model}`);
+
   let payload: FindingsPayload;
   try {
     payload = await callAnthropic(
@@ -205,11 +240,12 @@ async function main(): Promise<void> {
     );
   } catch (e) {
     if (e instanceof ZodError) {
-      process.stderr.write(`Model output failed schema validation:\n${prettifyError(e)}\n`);
+      logError("Model output failed schema validation:");
+      console.error(prettifyError(e));
       process.exit(1);
     }
     const msg = e instanceof Error ? e.message : String(e);
-    process.stderr.write(`Anthropic request or JSON validation failed: ${msg}\n`);
+    logError(`Anthropic request or JSON validation failed: ${msg}`);
     process.exit(1);
   }
 
@@ -219,6 +255,6 @@ async function main(): Promise<void> {
 
 main().catch((e) => {
   const msg = e instanceof Error ? e.message : String(e);
-  process.stderr.write(`Unexpected error: ${msg}\n`);
+  logError(`Unexpected error: ${msg}`);
   process.exit(1);
 });
