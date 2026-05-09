@@ -9,9 +9,10 @@ import {
 } from "./aircall";
 import { loadConfig } from "./config";
 import {
-  extractJsonObject,
   FINDING_CATEGORIES,
+  gapFindingsTool,
   normalizeFindingsPayload,
+  SUBMIT_GAP_FINDINGS_TOOL_NAME,
   type FindingsPayload,
 } from "./findings";
 import { buildCrmDigest, parseSmartMovingOpportunity } from "./smartmoving";
@@ -37,7 +38,7 @@ function exitWithZodIssue(context: string, err: ZodError): never {
 
 /**
  * Prompt design (see README for full trade-offs): compact CRM digest + line-shaped
- * transcript reduce tokens; strict JSON-only output enables automation; “gaps only”
+ * transcript reduce tokens; structured tool output + Zod validation; “gaps only”
  * and fixed categories reduce false positives; Haiku chosen for cost/latency at volume.
  */
 function buildSystemPrompt(): string {
@@ -55,9 +56,7 @@ function buildSystemPrompt(): string {
     "quote must be a verbatim substring copied from the transcript (one utterance or contiguous substring), used as evidence.",
     "summary must be a short factual description of the gap (one or two sentences max).",
     "",
-    "Output ONLY valid JSON (no markdown, no prose outside JSON) with this exact shape:",
-    '{"findings":[{"category":"...","summary":"...","quote":"...","confidence":"..."}]}',
-    "If there are no gaps, output exactly: {\"findings\":[]}",
+    `Call the tool ${SUBMIT_GAP_FINDINGS_TOOL_NAME} with your findings. If there are no gaps, use an empty findings array.`,
   ].join("\n");
 }
 
@@ -71,6 +70,15 @@ function buildUserPrompt(transcript: string, crmDigest: string, callMeta: string
     "CRM DIGEST:",
     crmDigest,
   ].join("\n");
+}
+
+function inputFromSubmitGapFindingsTool(content: Anthropic.Messages.ContentBlock[]): unknown {
+  for (const block of content) {
+    if (block.type === "tool_use" && block.name === SUBMIT_GAP_FINDINGS_TOOL_NAME) {
+      return block.input;
+    }
+  }
+  throw new Error(`Missing tool_use block for ${SUBMIT_GAP_FINDINGS_TOOL_NAME}`);
 }
 
 async function callAnthropic(
@@ -87,12 +95,15 @@ async function callAnthropic(
       max_tokens: maxTokens,
       system,
       messages: [{ role: "user", content: userContent }],
+      tools: [gapFindingsTool],
+      tool_choice: {
+        type: "tool",
+        name: SUBMIT_GAP_FINDINGS_TOOL_NAME,
+        disable_parallel_tool_use: true,
+      },
     });
-    const textBlocks = resp.content.filter((b) => b.type === "text") as Array<{ type: "text"; text: string }>;
-    const rawText = textBlocks.map((b) => b.text).join("\n");
-    const jsonText = extractJsonObject(rawText);
-    const parsed: unknown = JSON.parse(jsonText);
-    return normalizeFindingsPayload(parsed);
+    const raw = inputFromSubmitGapFindingsTool(resp.content);
+    return normalizeFindingsPayload(raw);
   };
 
   try {
@@ -102,8 +113,8 @@ async function callAnthropic(
     const fixUser = [
       user,
       "",
-      "Your previous reply was not valid JSON for the required schema.",
-      "Reply again with ONLY a single JSON object: {\"findings\":[...]} — no markdown fences, no commentary.",
+      `Your previous response was not usable: missing or invalid ${SUBMIT_GAP_FINDINGS_TOOL_NAME} arguments.`,
+      `Call ${SUBMIT_GAP_FINDINGS_TOOL_NAME} again with arguments that match the tool schema (empty findings if none).`,
     ].join("\n");
     return await run(fixUser);
   }

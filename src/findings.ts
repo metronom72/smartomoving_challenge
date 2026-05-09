@@ -18,8 +18,55 @@ export const FINDING_CATEGORIES = [
 export const FindingCategorySchema = z.enum(FINDING_CATEGORIES);
 export type FindingCategory = z.infer<typeof FindingCategorySchema>;
 
-const ConfidenceSchema = z.enum(["high", "medium", "low"]);
+const CONFIDENCE_LEVELS = ["high", "medium", "low"] as const;
+const ConfidenceSchema = z.enum(CONFIDENCE_LEVELS);
 export type ConfidenceLevel = z.infer<typeof ConfidenceSchema>;
+
+/** Tool name for Anthropic Messages API (forced tool_choice). */
+export const SUBMIT_GAP_FINDINGS_TOOL_NAME = "submit_gap_findings" as const;
+
+/**
+ * Single structured-output tool: model must call this with gap findings (see Zod schemas below).
+ */
+export const gapFindingsTool = {
+  name: SUBMIT_GAP_FINDINGS_TOOL_NAME,
+  description:
+    "Submit the final CRM-vs-transcript gap analysis. Call once with all gaps; use an empty findings array when there are none.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      findings: {
+        type: "array",
+        description: "Gaps only: transcript facts missing or contradicted in the CRM digest.",
+        items: {
+          type: "object",
+          properties: {
+            category: {
+              type: "string",
+              enum: [...FINDING_CATEGORIES],
+              description: "Taxonomy bucket for the gap.",
+            },
+            summary: {
+              type: "string",
+              description: "Short factual description of the gap (one or two sentences max).",
+            },
+            quote: {
+              type: "string",
+              description: "Verbatim substring from the transcript supporting the gap.",
+            },
+            confidence: {
+              type: "string",
+              enum: [...CONFIDENCE_LEVELS],
+              description: "How sure you are this is a real gap.",
+            },
+          },
+          required: ["category", "summary", "quote", "confidence"],
+        },
+      },
+    },
+    required: ["findings"],
+  },
+};
 
 const trimmedNonempty = z.string().transform((s) => s.trim()).pipe(z.string().min(1));
 
@@ -40,14 +87,4 @@ export type FindingsPayload = z.infer<typeof FindingsPayloadSchema>;
 
 export function normalizeFindingsPayload(raw: unknown): FindingsPayload {
   return FindingsPayloadSchema.parse(raw);
-}
-
-export function extractJsonObject(text: string): string {
-  const t = text.trim();
-  const fence = /^```(?:json)?\s*([\s\S]*?)```$/im.exec(t);
-  if (fence?.[1]) return fence[1]!.trim();
-  const start = t.indexOf("{");
-  const end = t.lastIndexOf("}");
-  if (start >= 0 && end > start) return t.slice(start, end + 1);
-  return t;
 }
